@@ -36,7 +36,7 @@ jobs:
           set -euo pipefail
           cp README.md /tmp/wallet-readme.md
           git clone --depth 1 https://github.com/KASignDag/zkas-dual-alert.git /tmp/zkas-dual-alert
-          rsync -a --exclude '.git' /tmp/zkas-dual-alert/ ./
+          rsync -a --exclude '.git' --exclude '.github/workflows' /tmp/zkas-dual-alert/ ./
           cp /tmp/wallet-readme.md README.md
 
           python3 - <<'PY'
@@ -56,7 +56,6 @@ jobs:
               ('RELEASE_NOTES_v0.2.2.md', 'RELEASE_NOTES_v0.1.0.md'),
               ('v0.2.2', 'v0.1.0'),
               ('"0.2.2"', '"0.1.0"'),
-              ('Version v0.2.2', 'Version v0.1.0'),
           ]
 
           skip = {Path('.github/workflows/seed-wallet-edition.yml'), Path('README.md')}
@@ -84,18 +83,12 @@ jobs:
           if old_notes.exists():
               old_notes.replace(new_notes)
 
-          # Make the wallet distinction explicit in the app UI and docs.
           app = Path('app.py')
           if app.exists():
               s = app.read_text(encoding='utf-8')
               s = s.replace('Independent read-only companion for compatible ZKas/Kaspa solo-dual-mode bridges.',
                             'Independent read-only companion for the ZKas Desktop Wallet managed KAS + ZKAS bridge.')
               app.write_text(s, encoding='utf-8')
-
-          cfg = Path('config.example.json')
-          if cfg.exists():
-              s = cfg.read_text(encoding='utf-8').replace('http://127.0.0.1:3033', 'http://127.0.0.1:18114')
-              cfg.write_text(s, encoding='utf-8')
 
           notes = Path('RELEASE_NOTES_v0.1.0.md')
           if notes.exists():
