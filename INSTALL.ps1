@@ -11,7 +11,7 @@ $DataDir = Join-Path $InstallDir "data"
 Write-Host "Installing ZKas Wallet Bridge Alert v0.1.0 - Unofficial Community Tool..."
 Write-Host "Target: $InstallDir"
 
-# Stop the old scheduled instance if present.
+# Stop only this wallet-alert scheduled instance if present.
 $task = Get-ScheduledTask -TaskName "ZKas Wallet Bridge Alert" -ErrorAction SilentlyContinue
 if ($task) {
     Stop-ScheduledTask -TaskName "ZKas Wallet Bridge Alert" -ErrorAction SilentlyContinue
@@ -86,7 +86,7 @@ Start-ScheduledTask -TaskName "ZKas Wallet Bridge Alert"
 Start-Sleep -Seconds 4
 
 $taskInfo = Get-ScheduledTask -TaskName "ZKas Wallet Bridge Alert" -ErrorAction SilentlyContinue
-$listener = Get-NetTCPConnection -LocalPort 3040 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+$listener = Get-NetTCPConnection -LocalPort 3041 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
 
 Write-Host ""
 Write-Host "Installation complete."
@@ -94,6 +94,7 @@ Write-Host "Task state: $($taskInfo.State)"
 if ($listener) {
     Write-Host "Web UI: http://127.0.0.1:3041"
 } else {
-    Write-Host "The task was started, but port 3040 is not listening yet. Run VERIFY.ps1 in a few seconds."
+    Write-Host "The task was started, but port 3041 is not listening yet. Run VERIFY.ps1 in a few seconds."
 }
+Write-Host "Wallet bridge target: http://127.0.0.1:18114"
 Write-Host "Default login: admin / 12345678"
