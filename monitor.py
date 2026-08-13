@@ -24,7 +24,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 DEFAULT_CONFIG = "config.json"
 USER_AGENT = f"ZKasWalletBridgeAlert/{APP_VERSION}"
 STOP = False
@@ -404,11 +404,11 @@ def event_body(event: BlockEvent) -> str:
 
 def load_state(path: Path) -> Dict[str, Any]:
     if not path.exists():
-        return {"seen": [], "reward_seen": [], "counts": {"ZKAS": 0, "KAS": 0}}
+        return {"seen": [], "reward_seen": [], "counts": {"ZKAS": 0, "KAS": 0}, "bridge_down": False}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return {"seen": [], "reward_seen": [], "counts": {"ZKAS": 0, "KAS": 0}}
+        return {"seen": [], "reward_seen": [], "counts": {"ZKAS": 0, "KAS": 0}, "bridge_down": False}
 
 
 def save_state(path: Path, state: Dict[str, Any]) -> None:
@@ -445,14 +445,14 @@ def monitor(config_path: Path, once: bool = False, test_notification: bool = Fal
 
     source = BridgeSource(base_url, timeout)
     failures = 0
-    down_alerted = False
+    down_alerted = bool(state.get("bridge_down", False))
     log(f"ZKas Wallet Bridge Alert — Unofficial Community Tool v{APP_VERSION} monitoring {base_url} every {poll}s")
 
     global STOP
     while not STOP and not (stop_event is not None and stop_event.is_set()):
         try:
             snap = source.fetch()
-            if failures and down_alerted and alerts.get("bridge_recovered", True):
+            if down_alerted and alerts.get("bridge_recovered", True):
                 notify_all(notifiers, "✅ Bridge recovered", f"Bridge is responding again at {base_url} (source: {snap.source}).")
             failures = 0
             down_alerted = False
@@ -490,7 +490,7 @@ def monitor(config_path: Path, once: bool = False, test_notification: bool = Fal
                     counts[chain] = max(old, total)
                 first_run = False
 
-            state = {"seen": sorted(seen), "reward_seen": sorted(reward_seen), "counts": counts, "last_source": snap.source, "updated": int(time.time())}
+            state = {"seen": sorted(seen), "reward_seen": sorted(reward_seen), "counts": counts, "last_source": snap.source, "bridge_down": False, "updated": int(time.time())}
             save_state(state_path, state)
             log(f"OK source={snap.source} ZKAS={snap.zkas_total} KAS={snap.kas_total} workers={snap.active_workers if snap.active_workers is not None else '-'} shares={snap.total_shares if snap.total_shares is not None else '-'}")
         except Exception as exc:
@@ -499,6 +499,8 @@ def monitor(config_path: Path, once: bool = False, test_notification: bool = Fal
             if failures >= fail_threshold and not down_alerted and alerts.get("bridge_down", True):
                 notify_all(notifiers, "⚠️ Bridge unreachable", f"Failed {failures} consecutive checks for {base_url}.\nLast error: {exc}")
                 down_alerted = True
+                state = {"seen": sorted(seen), "reward_seen": sorted(reward_seen), "counts": counts, "last_source": state.get("last_source", "unknown"), "bridge_down": True, "updated": int(time.time())}
+                save_state(state_path, state)
 
         if once:
             break

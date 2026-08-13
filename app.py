@@ -16,7 +16,7 @@ from urllib.parse import parse_qs
 
 import monitor
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 CONFIG = DATA / "config.json"
