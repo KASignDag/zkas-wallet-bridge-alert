@@ -15,11 +15,11 @@ if ($task) {
     Write-Host "Task: NOT INSTALLED"
 }
 
-$web = Get-NetTCPConnection -LocalPort 3040 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-Write-Host ("Web 3040: " + $(if ($web) {"LISTENING (PID $($web.OwningProcess))"} else {"NOT LISTENING"}))
+$web = Get-NetTCPConnection -LocalPort 3041 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+Write-Host ("Web 3041: " + $(if ($web) {"LISTENING (PID $($web.OwningProcess))"} else {"NOT LISTENING"}))
 
-$bridge = Get-NetTCPConnection -LocalPort 3033 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-Write-Host ("Bridge 3033: " + $(if ($bridge) {"LISTENING"} else {"NOT LISTENING"}))
+$bridge = Get-NetTCPConnection -LocalPort 18114 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+Write-Host ("Wallet bridge 18114: " + $(if ($bridge) {"LISTENING"} else {"NOT LISTENING"}))
 
 $log = Join-Path $InstallDir "data\alert.log"
 if (Test-Path $log) {
