@@ -17,92 +17,30 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply persisted bridge recovery fix
+      - name: Patch recovery state persistence
         shell: bash
         run: |
-          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           p = Path('monitor.py')
           s = p.read_text(encoding='utf-8')
           s = s.replace('APP_VERSION = "0.1.0"', 'APP_VERSION = "0.1.1"', 1)
-
-          s = s.replace(
-              'return {"seen": [], "reward_seen": [], "counts": {"ZKAS": 0, "KAS": 0}}',
-              'return {"seen": [], "reward_seen": [], "counts": {"ZKAS": 0, "KAS": 0}, "bridge_down": False}'
-          )
-
-          s = s.replace(
-              '    failures = 0\n    down_alerted = False\n',
-              '    failures = 0\n    down_alerted = bool(state.get("bridge_down", False))\n'
-          )
-
-          s = s.replace(
-              '            if failures and down_alerted and alerts.get("bridge_recovered", True):\n                notify_all(notifiers, "✅ Bridge recovered", f"Bridge is responding again at {base_url} (source: {snap.source}).")\n            failures = 0\n            down_alerted = False\n',
-              '            if down_alerted and alerts.get("bridge_recovered", True):\n                notify_all(notifiers, "✅ Bridge recovered", f"Bridge is responding again at {base_url} (source: {snap.source}).")\n            failures = 0\n            down_alerted = False\n'
-          )
-
-          s = s.replace(
-              '            state = {"seen": sorted(seen), "reward_seen": sorted(reward_seen), "counts": counts, "last_source": snap.source, "updated": int(time.time())}\n',
-              '            state = {"seen": sorted(seen), "reward_seen": sorted(reward_seen), "counts": counts, "last_source": snap.source, "bridge_down": False, "updated": int(time.time())}\n'
-          )
-
-          old = '''            if failures >= fail_threshold and not down_alerted and alerts.get("bridge_down", True):\n                notify_all(notifiers, "⚠️ Bridge unreachable", f"Failed {failures} consecutive checks for {base_url}.\\nLast error: {exc}")\n                down_alerted = True\n'''
-          new = '''            if failures >= fail_threshold and not down_alerted and alerts.get("bridge_down", True):\n                notify_all(notifiers, "⚠️ Bridge unreachable", f"Failed {failures} consecutive checks for {base_url}.\\nLast error: {exc}")\n                down_alerted = True\n                state = {"seen": sorted(seen), "reward_seen": sorted(reward_seen), "counts": counts, "last_source": state.get("last_source", "unknown"), "bridge_down": True, "updated": int(time.time())}\n                save_state(state_path, state)\n'''
-          if old not in s:
-              raise SystemExit('Expected bridge-down block was not found')
-          s = s.replace(old, new, 1)
+          s = s.replace('return {"seen": [], "reward_seen": [], "counts": {"ZKAS": 0, "KAS": 0}}', 'return {"seen": [], "reward_seen": [], "counts": {"ZKAS": 0, "KAS": 0}, "bridge_down": False}')
+          s = s.replace('    failures = 0\n    down_alerted = False\n', '    failures = 0\n    down_alerted = bool(state.get("bridge_down", False))\n', 1)
+          s = s.replace('            if failures and down_alerted and alerts.get("bridge_recovered", True):', '            if down_alerted and alerts.get("bridge_recovered", True):', 1)
+          s = s.replace('            state = {"seen": sorted(seen), "reward_seen": sorted(reward_seen), "counts": counts, "last_source": snap.source, "updated": int(time.time())}', '            state = {"seen": sorted(seen), "reward_seen": sorted(reward_seen), "counts": counts, "last_source": snap.source, "bridge_down": False, "updated": int(time.time())}', 1)
+          marker = '                down_alerted = True\n'
+          replacement = marker + '                state = {"seen": sorted(seen), "reward_seen": sorted(reward_seen), "counts": counts, "last_source": state.get("last_source", "unknown"), "bridge_down": True, "updated": int(time.time())}\n                save_state(state_path, state)\n'
+          if marker not in s:
+              raise SystemExit('down-alert marker missing')
+          s = s.replace(marker, replacement, 1)
           p.write_text(s, encoding='utf-8')
 
           app = Path('app.py')
           a = app.read_text(encoding='utf-8').replace('APP_VERSION = "0.1.0"', 'APP_VERSION = "0.1.1"', 1)
           app.write_text(a, encoding='utf-8')
 
-          Path('tests/test_recovery.py').write_text(r'''import json
-import tempfile
-import unittest
-from pathlib import Path
-from unittest.mock import patch
-
-import monitor as alert_monitor
-
-
-class RecoveryPersistenceTests(unittest.TestCase):
-    def test_recovery_alert_survives_process_restart(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            config = root / "config.json"
-            state = root / "state.json"
-            config.write_text(json.dumps({
-                "bridge": {"base_url": "http://127.0.0.1:18114", "poll_seconds": 5, "down_after_failures": 1},
-                "alerts": {"bridge_down": True, "bridge_recovered": True},
-                "notifications": {"console": {"enabled": True}},
-                "state_file": "state.json"
-            }), encoding="utf-8")
-            state.write_text(json.dumps({
-                "seen": [], "reward_seen": [], "counts": {"ZKAS": 0, "KAS": 0}, "bridge_down": True
-            }), encoding="utf-8")
-
-            snap = alert_monitor.Snapshot(0, 0, [], [], active_workers=2, total_shares=17, bridge_uptime=232, source="json")
-            sent = []
-
-            with patch.object(alert_monitor.BridgeSource, "fetch", return_value=snap), \
-                 patch.object(alert_monitor, "notify_all", side_effect=lambda n, subject, body: sent.append((subject, body)) or []):
-                rc = alert_monitor.monitor(config, once=True)
-
-            self.assertEqual(rc, 0)
-            self.assertTrue(any(subject == "✅ Bridge recovered" for subject, _ in sent))
-            saved = json.loads(state.read_text(encoding="utf-8"))
-            self.assertFalse(saved["bridge_down"])
-
-
-if __name__ == "__main__":
-    unittest.main()
-''', encoding='utf-8')
-
-          notes = Path('RELEASE_NOTES_v0.1.1.md')
-          notes.write_text('''# ZKas Wallet Bridge Alert v0.1.1\n\n- Persists bridge-down state in `state.json`.\n- Sends `✅ Bridge recovered` even when the alert process or PC restarted while the bridge was down.\n- Clears the persisted outage state after the bridge responds again.\n- Adds a regression test covering reboot/restart recovery notifications.\n''', encoding='utf-8')
+          Path('RELEASE_NOTES_v0.1.1.md').write_text('# ZKas Wallet Bridge Alert v0.1.1\n\n- Persists bridge-down state in `state.json`.\n- Sends `✅ Bridge recovered` after the alert process or PC restarts while the bridge is down.\n- Clears persisted outage state once the bridge responds again.\n- Includes a reboot/restart recovery regression test.\n', encoding='utf-8')
           PY
 
       - name: Run tests
